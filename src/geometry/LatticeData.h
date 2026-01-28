@@ -26,6 +26,7 @@
 #include "reporting/Reportable.h"
 #include "reporting/Timers.h"
 #include "util/Vector3D.h"
+#include "util/AlignedAllocator.h"
 
 namespace hemelb
 {
@@ -697,8 +698,8 @@ namespace hemelb
 				site_t midDomainProcCollisions[COLLISION_TYPES]; //! Number of fluid sites with all fluid neighbours on this rank, for each collision type.
 				site_t domainEdgeProcCollisions[COLLISION_TYPES]; //! Number of fluid sites with at least one fluid neighbour on another rank, for each collision type.
 				site_t localFluidSites; //! The number of local fluid sites.
-				std::vector<distribn_t> oldDistributions; //! The distribution values for the previous time step.
-				std::vector<distribn_t> newDistributions; //! The distribution values for the next time step.
+				std::vector<distribn_t, hemelb::util::AlignedAllocator<distribn_t, 64>> oldDistributions; //! The distribution values for the previous time step.
+				std::vector<distribn_t, hemelb::util::AlignedAllocator<distribn_t, 64>> newDistributions; //! The distribution values for the next time step.
 				std::vector<LatticeForceVector> forceAtSite; //! Holds the force vector at a fluid site
 				std::unordered_map<site_t, Block> blocks; //! Data where local fluid sites are stored contiguously.
 
