@@ -50,9 +50,8 @@ DEPbuild(){
 		-DCMAKE_BUILD_TYPE=Release \
 		-DCMAKE_C_COMPILER="${CC}" \
 		-DCMAKE_CXX_COMPILER="${CXX}" \
-		-DCMAKE_CUDA_COMPILER="$(which nvcc)" \
-		-DCMAKE_CUDA_HOST_COMPILER="$(which g++)" \
-		-DCMAKE_CUDA_ARCHITECTURES="${CUVER}" \
+		-DCMAKE_C_FLAGS="-O3 -g" \
+		-DCMAKE_CXX_FLAGS="-O3 -g" \
 		-DCMAKE_POSITION_INDEPENDENT_CODE=ON
 	cmake --build dep/build -j
 	# -j 1 if something went wrong
@@ -120,8 +119,6 @@ SRCbuild(){
 		-DCMAKE_BUILD_TYPE=Release \
 		-DCMAKE_C_COMPILER="${CC}" \
 		-DCMAKE_CXX_COMPILER="${CXX}" \
-		-DCMAKE_CUDA_COMPILER="$(which nvcc)" \
-		-DCMAKE_CUDA_HOST_COMPILER="$(which g++)" \
 		-DCMAKE_CUDA_ARCHITECTURES="${CUVER}" \
 		\
 		-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
@@ -129,6 +126,15 @@ SRCbuild(){
 		-DCMAKE_INSTALL_RPATH="${INSTALL_DIR}/lib" \
 		-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=TRUE \
 		\
+		-DHEMELB_USE_PARMETIS=ON \
+		-DHEMELB_USE_MPI_CALL=ON \
+		-DHEMELB_ALLTOALL_IMPLEMENTATION="Separated" \
+		-DHEMELB_GATHERS_IMPLEMENTATION="Separated" \
+		-DHEMELB_POINTPOINT_IMPLEMENTATION="Coalesce" \
+		\
+		-DHEMELB_USE_SSE3=OFF \
+		\
+		-DHEMELB_OPTIMISATION="-O3 -g" \
 		"$@"
 	cmake --build src/build -j
 	cmake --install src/build
