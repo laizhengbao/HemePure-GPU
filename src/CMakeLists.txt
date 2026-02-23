@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18)
 
 project(HemeLB_GPU)
 
@@ -138,7 +138,6 @@ if(HEMELB_USE_SSE3)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse3")
 	set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -msse3")
 	set(CMAKE_CXX_FLAGS_RELEASE "${HEMELB_OPTIMISATION} -msse3")
-	set(CUDA_EXTRA_COMPILER_OPTIONS " --compiler-options '-msse3'")
 endif()
 
 
@@ -161,39 +160,20 @@ if(HEMELB_USE_GPU)
 endif()
 
 if (USE_CUDA)
-
-
   enable_language(CUDA)
+  find_package(CUDAToolkit REQUIRED)
 
-  find_package(CUDA REQUIRED)
-
-  #ADDED 25-3-2020
-  include_directories("${CUDA_TOOLKIT_ROOT_DIR}")
-  include_directories("${CUDA_TOOLKIT_ROOT_DIR}/include/")
-
-  set(CUDA_PROPAGATE_HOST_FLAGS ON)
-
-  if(${CMAKE_CXX_COMPILER_ID} STREQUAL GNU)
-    message("gnu COMPILER")
-
-    set(CMAKE_CUDA_FLAGS "-rdc true -ccbin g++ ${CUDA_EXTRA_COMPILER_OPTIONS} ${CMAKE_CUDA_FLAGS}")
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --compiler-options '-g' -lineinfo --ptxas-options=-v --disable-warnings")
-
-    #set(CMAKE_CUDA_FLAGS "-ccbin g++ --compiler-options '-msse3' -gencode arch=compute_35,code=sm_35 -gencode arch=compute_60,code=sm_60 -gencode arch=compute_75,code=sm_75 -lineinfo")
-    set(CMAKE_CUDA_FLAGS_DEBUG " -ccbin g++ --compiler-options '-g' -gencode arch=compute_35,code=sm_35 -gencode arch=compute_60,code=sm_60 -gencode arch=compute_75,code=sm_75 -lineinfo --ptxas-options=-v --disable-warnings")
-    #set(CMAKE_CUDA_FLAGS_DEBUG " -ccbin g++ --compiler-options '-msse3' -gencode arch=compute_35,code=sm_35 -gencode arch=compute_60,code=sm_60 -gencode arch=compute_75,code=sm_75 -lineinfo --disable-warnings")
-  elseif( ${CMAKE_CXX_COMPILER_ID} STREQUAL "Intel")
-    # using Intel C++
-    message("intel COMPILER")
-    #	    set(CMAKE_CUDA_FLAGS "-D__ICC=1600 -ccbin icpc -gencode arch=compute_35,code=sm_35 -gencode arch=compute_60,code=sm_60 -lineinfo")
-    #	    set(CMAKE_CUDA_FLAGS_DEBUG "-D__ICC=1600 -ccbin icpc -gencode arch=compute_35,code=sm_35 -gencode arch=compute_60,code=sm_60 -lineinfo")
-
-    #  set(CMAKE_CUDA_FLAGS "-ccbin g++ --compiler-options '-msse3' -gencode arch=compute_35,code=sm_35 -gencode arch=compute_60,code=sm_60 -gencode arch=compute_75,code=sm_75 -lineinfo")
-    #  set(CMAKE_CUDA_FLAGS_DEBUG " -ccbin g++ --compiler-options '-msse3' -gencode arch=compute_35,code=sm_35 -gencode arch=compute_60,code=sm_60 -gencode arch=compute_75,code=sm_75 -lineinfo")
-    set(CMAKE_CUDA_FLAGS "-ccbin g++ --compiler-options '-msse3' -gencode arch=compute_35,code=sm_35 -gencode arch=compute_60,code=sm_60 -gencode arch=compute_75,code=sm_75 -lineinfo --ptxas-options=-v --disable-warnings")
-    set(CMAKE_CUDA_FLAGS_DEBUG " -ccbin g++ --compiler-options '-msse3' -gencode arch=compute_35,code=sm_35 -gencode arch=compute_60,code=sm_60 -gencode arch=compute_75,code=sm_75 -lineinfo --ptxas-options=-v --disable-warnings")
-
+  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 35 60 70 75 80)
+    message(STATUS "CUDA architectures not specified, using defaults: ${CMAKE_CUDA_ARCHITECTURES}")
   endif()
+
+  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -lineinfo --ptxas-options=-v --disable-warnings")
+  
+  if(HEMELB_USE_SSE3)
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --compiler-options '-msse3'")
+  endif()
+
   message(STATUS "CUDA FLAGS: ${CMAKE_CUDA_FLAGS}")
 
 endif()
@@ -236,24 +216,19 @@ if (USE_HIP)
 
   if (USE_HIP_CUDA)
     enable_language(CUDA)
-    find_package(CUDA REQUIRED)
-    include_directories("${CUDA_TOOLKIT_ROOT_DIR}")
-    include_directories("${CUDA_TOOLKIT_ROOT_DIR}/include/")
+    find_package(CUDAToolkit REQUIRED)
 
     find_package(HIP REQUIRED)
     list( APPEND HIP_INCLUDE_DIRS "${HIP_PATH}/include" )
 
     if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-      set(CMAKE_CUDA_ARCHITECTURES 70)
+      set(CMAKE_CUDA_ARCHITECTURES 60 70 75 80)
     endif()
-    find_package(CUDAToolkit REQUIRED)
 
-    set(NVCC_OPTIONS -rdc true -ccbin g++ --compiler-options \'-msse3\')
-    set(NVCC_OPTIONS ${NVCC_OPTIONS} -gencode=arch=compute_60,code=\"sm_60,compute_60\")
-    set(NVCC_OPTIONS ${NVCC_OPTIONS} -gencode=arch=compute_70,code=\"sm_70,compute_70\")
-    set(NVCC_OPTIONS ${NVCC_OPTIONS} -gencode=arch=compute_75,code=\"sm_75,compute_75\")
-    set(NVCC_OPTIONS ${NVCC_OPTIONS} -gencode=arch=compute_80,code=\"sm_80,compute_80\")
-    set(NVCC_OPTIONS ${NVCC_OPTIONS} -lineinfo --ptxas-options=-v --disable-warnings)
+    set(NVCC_OPTIONS -lineinfo --ptxas-options=-v --disable-warnings)
+    if(HEMELB_USE_SSE3)
+      list(APPEND NVCC_OPTIONS "--compiler-options" "'-msse3'")
+    endif()
 
     message(STATUS "NVCC_OPTIONS: ${NVCC_OPTIONS}")
   endif()
@@ -425,6 +400,7 @@ if(USE_CUDA)
   set_property(TARGET gpu_objs PROPERTY CUDA_SEPARABLE_COMPILATION ON)
   set_source_files_properties(main.cc PROPERTIES LANGUAGE CUDA)
   add_executable(${HEMELB_EXECUTABLE} main.cc $<TARGET_OBJECTS:gpu_objs>)
+  set_property(TARGET ${HEMELB_EXECUTABLE} PROPERTY CUDA_SEPARABLE_COMPILATION ON)
   target_link_libraries(${HEMELB_EXECUTABLE} PUBLIC ${OpenMP_CXX_LIBRARIES})
 endif()
 
@@ -453,11 +429,6 @@ endif()
 
 add_subdirectory(resources)
 
-if (USE_CUDA)
-  set_property(TARGET ${HEMELB_EXECUTABLE} PROPERTY CUDA_SEPARABLE_COMPILATION ON)
-  #set_property(TARGET ${HEMELB_EXECUTABLE} PROPERTY CUDA_STANDARD 11)
-endif()
-
 if (USE_HIP)
   target_link_libraries(${HEMELB_EXECUTABLE} PUBLIC gpu_objs ${OpenMP_CXX_LIBRARIES})
   target_link_options(${HEMELB_EXECUTABLE} PUBLIC
@@ -485,12 +456,15 @@ target_link_libraries(${HEMELB_EXECUTABLE} PUBLIC
   ${CTEMPLATE_LIBRARY}
   ${ZLIB_LIBRARIES}
   ${TIRPC_LIBRARY}
-  ${CUDA_LINK_LIBRARIES_KEYWORD}
+  $<$<BOOL:${USE_CUDA}>:CUDA::cudart>
   ${OpenMP_CXX_LIBRARIES}
 )
 
 add_executable(io_tool io_tool.cc)
 target_link_libraries(io_tool PUBLIC gpu_objs ${OpenMP_CXX_LIBRARIES})
+if (USE_CUDA)
+  set_property(TARGET io_tool PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+endif()
 target_link_options(io_tool PUBLIC
     $<$<BOOL:${USE_HIP_CUDA}>:${NVCC_OPTIONS}>
     $<$<BOOL:${USE_HIP_ROCM}>:${HIPCC_OPTIONS}>)
@@ -504,7 +478,7 @@ target_link_libraries(io_tool PUBLIC
   ${CTEMPLATE_LIBRARY}
   ${ZLIB_LIBRARIES}
   ${TIRPC_LIBRARY}
-  ${CUDA_LINK_LIBRARIES_KEYWORD}
+  $<$<BOOL:${USE_CUDA}>:CUDA::cudart>
   ${OpenMP_CXX_LIBRARIES}
 )
 
