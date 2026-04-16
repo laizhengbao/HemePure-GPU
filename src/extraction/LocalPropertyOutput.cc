@@ -217,43 +217,44 @@ namespace hemelb
     {
       return outputSpec;
     }
+void LocalPropertyOutput::Write(unsigned long timestepNumber, unsigned long initial_timestepNumber, unsigned long max_timestepNumber)
+{
+  // IZ - Consider the checkpointing case (restarting simulation from t_restart = initial_timestepNumber)
+  int n_asynch_write = (timestepNumber - initial_timestepNumber +1) / outputSpec->frequency; 
 
-    void LocalPropertyOutput::Write(unsigned long timestepNumber, unsigned long initial_timestepNumber, unsigned long max_timestepNumber)
-    {
-      // Don't write if we shouldn't this iteration.
-      if (!ShouldWrite(timestepNumber-initial_timestepNumber+1))
-      {
-        return;
-      }
+  // Don't write if we shouldn't this iteration.
+  if (!ShouldWrite(timestepNumber-initial_timestepNumber+1))
+  {
+    return;
+  }
 
-      // Don't write if this core doesn't do anything.
-      if (writeLength <= 0)
-      {
-        return;
-      }
+  // Don't write if this core doesn't do anything.
+  if (writeLength <= 0)
+  {
+    return;
+  }
 
-      // Determine first the # of the current write
-      // Max number of writing times (divide max simulation time with the frequency time):
-      int max_write_n = (max_timestepNumber) / outputSpec->frequency;
-      // IZ - debugging
-      printf("Rank: %d, Time: %lu, max_timestepNumber = %ld, outputSpec->frequency = %ld, initial_timestepNumber = %ld, Max_number of writing times = %d \n", 
-             comms.Rank(), timestepNumber, max_timestepNumber, outputSpec->frequency, initial_timestepNumber, max_write_n );
+  // Determine first the # of the current write
+  // Max number of writing times (divide max simulation time with the frequency time):
+  int max_write_n = (max_timestepNumber) / outputSpec->frequency; 
 
-      requests_Write.resize(max_write_n, MPI_Request());
-      // IZ - Consider the checkpointing case (restarting simulation from t_restart = initial_timestepNumber)
-      int n_asynch_write = (timestepNumber - initial_timestepNumber +1) / outputSpec->frequency; 
+  // IZ - debugging
+  printf("Rank: %d, Time: %lu, max_timestepNumber = %ld, outputSpec->frequency = %ld, initial_timestepNumber = %ld, Max_number of writing times = %d \n", 
+         comms.Rank(), timestepNumber, max_timestepNumber, outputSpec->frequency, initial_timestepNumber, max_write_n );
 
-      // a. Call MPI_Wait to ensure that the MPI write from the previous timestep is complete
-      // BEFORE we start filling the buffer again.
-      if (n_asynch_write > 1)
-      {
-        printf("Rank: %d, Time: %lu, Waiting for previous non-blocking write (Number %d) to complete...\n", comms.Rank(), timestepNumber, n_asynch_write - 1);
-        MPI_Wait(&requests_Write[n_asynch_write-2], &status);
-        printf("Rank: %d, Time: %lu, Previous write completed.\n", comms.Rank(), timestepNumber);
-      }
+  requests_Write.resize(max_write_n, MPI_Request());
 
-      // Create the buffer.
-      io::writers::xdr::XdrMemWriter xdrWriter(&buffer[0], buffer.size());
+  // a. Call MPI_Wait to ensure that the MPI write from the previous timestep is complete
+  // BEFORE we start filling the buffer again.
+  if (n_asynch_write > 1)
+  {
+    printf("Rank: %d, Time: %lu, Waiting for previous non-blocking write (Number %d) to complete...\n", comms.Rank(), timestepNumber, n_asynch_write - 1);
+    MPI_Wait(&requests_Write[n_asynch_write-2], &status);
+    printf("Rank: %d, Time: %lu, Previous write completed.\n", comms.Rank(), timestepNumber);
+  }
+
+  // Create the buffer.
+  io::writers::xdr::XdrMemWriter xdrWriter(&buffer[0], buffer.size());
 
       // Firstly, the IO proc must write the iteration number.
       if (comms.OnIORank())

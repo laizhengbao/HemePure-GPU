@@ -107,6 +107,10 @@ namespace hemelb
       // Case t_start=t_restart (Checkpointing)
       propertyWriter->Write(simulationState.GetTimeStep(), simulationState.GetInitTimeStep() , simulationState.GetTotalTimeSteps() );
 
+      // IZ - Ensuring all writing is safe before finishing iteration
+      // This helps prevent hangs at steps shortly after a large IO burst.
+      // comms.Barrier(); // If needed
+
       timers[reporting::Timers::extractionWriting].Stop();
     }
 
