@@ -232,6 +232,25 @@ namespace hemelb
         return;
       }
 
+      // Determine first the # of the current write
+      // Max number of writing times (divide max simulation time with the frequency time):
+      int max_write_n = (max_timestepNumber) / outputSpec->frequency;
+      // IZ - debugging
+      //printf("max_timestepNumber = %ld, outputSpec->frequency = %ld, initial_timestepNumber = %ld, Max_number of writing times = %d \n\n", max_timestepNumber, outputSpec->frequency, initial_timestepNumber, max_write_n );
+
+      requests_Write.resize(max_write_n, MPI_Request());
+      // IZ - Consider the checkpointing case (restarting simulation from t_restart = initial_timestepNumber)
+      // int n_asynch_write = timestepNumber / outputSpec->frequency; // Determine the number of the file (time-sequence) being written
+      int n_asynch_write = (timestepNumber - initial_timestepNumber +1) / outputSpec->frequency; // Determine the number of the file (time-sequence) being written
+      //printf("Rank: %d, Writing time = %lu and Number = %d \n",  comms.Rank(), timestepNumber, n_asynch_write);
+
+      // a. Call MPI_Wait to ensure that the MPI write from the previous timestep is complete
+      // BEFORE we start filling the buffer again.
+      if (n_asynch_write > 1)
+      {
+        MPI_Wait(&requests_Write[n_asynch_write-2], &status);
+      }
+
       // Create the buffer.
       io::writers::xdr::XdrMemWriter xdrWriter(&buffer[0], buffer.size());
 
@@ -325,55 +344,6 @@ namespace hemelb
       }
 
       //========================================================================
-
-      /*
-      // Blocking MPI write
-      // Actually do the MPI writing.
-      outputFile.WriteAt(localDataOffsetIntoFile, buffer);
-      */
-
-      /** Switch to non-blocking MPI I/O
-      Steps:
-      a. Call MPI_Wait to ensure that the MPI write from the previous timestep is complete:
-            int MPI_Wait(
-              MPI_Request *request,
-              MPI_Status *status
-              );
-          TODO:
-            a.1. Create enough requests:
-                  std::vector<MPI_Request> requests_Write; // Place this in MpiFile.h
-                  and do something similar to the following:
-                    void CoalescePointPoint::EnsureEnoughRequests(size_t count)
-                    {
-                      if (requests.size() < count)
-                      {
-                        requests.resize(count, MPI_Request());
-                        statuses.resize(count, MPI_Status());
-                      }
-                    }
-
-      b. Call non-blocking MPI write:
-          outputFile.WriteAt_nonBlocking(localDataOffsetIntoFile, buffer);
-      c. If current write is the last one then call MPI_Wait to ensure that the
-          MPI write is completed before exiting the simulation.
-          Or Maybe better to just call the blocking MPI write at this last time, #
-          i.e. call outputFile.WriteAt(localDataOffsetIntoFile, buffer);
-      */
-
-      // Determine first the # of the current write
-      // Max number of writing times (divide max simulation time with the frequency time):
-      int max_write_n = (max_timestepNumber) / outputSpec->frequency;
-      // IZ - debugging
-      //printf("max_timestepNumber = %ld, outputSpec->frequency = %ld, initial_timestepNumber = %ld, Max_number of writing times = %d \n\n", max_timestepNumber, outputSpec->frequency, initial_timestepNumber, max_write_n );
-
-      requests_Write.resize(max_write_n, MPI_Request());
-      // IZ - Consider the checkpointing case (restarting simulation from t_restart = initial_timestepNumber)
-      // int n_asynch_write = timestepNumber / outputSpec->frequency; // Determine the number of the file (time-sequence) being written
-      int n_asynch_write = (timestepNumber - initial_timestepNumber +1) / outputSpec->frequency; // Determine the number of the file (time-sequence) being written
-      //printf("Rank: %d, Writing time = %lu and Number = %d \n",  comms.Rank(), timestepNumber, n_asynch_write);
-
-      // a. Call MPI_Wait
-      if (n_asynch_write>1) MPI_Wait(&requests_Write[n_asynch_write-2], &status);
 
       // b. Call non-blocking MPI write
       outputFile.WriteAt_nonBlocking(localDataOffsetIntoFile, buffer, &requests_Write[n_asynch_write-1]);
