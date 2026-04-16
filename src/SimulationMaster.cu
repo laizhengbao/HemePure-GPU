@@ -524,19 +524,20 @@ void SimulationMaster::DoTimeStep() {
 		hemelb::log::Logger::Log<hemelb::log::Info, hemelb::log::Singleton>("time step %07i :: write_image_to_disk %i",
 				simulationState->GetTimeStep(),
 				writeImage);
-		hemelb::log::Logger::Log<hemelb::log::Info, hemelb::log::Singleton>("time step %07i :: entering LogStabilityReport", simulationState->GetTimeStep());
+		// Log on all cores to see synchronization
+		printf("Rank: %d, Time: %07i :: entering LogStabilityReport\n", communicationNet.Rank(), (int)simulationState->GetTimeStep());
 		LogStabilityReport();
-		hemelb::log::Logger::Log<hemelb::log::Info, hemelb::log::Singleton>("time step %07i :: finished LogStabilityReport", simulationState->GetTimeStep());
+		printf("Rank: %d, Time: %07i :: finished LogStabilityReport\n", communicationNet.Rank(), (int)simulationState->GetTimeStep());
 	}
 
 	RecalculatePropertyRequirements();
 
 	if ((simulationState->GetTimeStep() - simulationState->GetInitTimeStep() +1) % 200 == 0) {
-		hemelb::log::Logger::Log<hemelb::log::Info, hemelb::log::Singleton>("time step %07i :: entering HandleActors", simulationState->GetTimeStep());
+		printf("Rank: %d, Time: %07i :: entering HandleActors\n", communicationNet.Rank(), (int)simulationState->GetTimeStep());
 	}
 	HandleActors();
 	if ((simulationState->GetTimeStep() - simulationState->GetInitTimeStep() +1) % 200 == 0) {
-		hemelb::log::Logger::Log<hemelb::log::Info, hemelb::log::Singleton>("time step %07i :: finished HandleActors", simulationState->GetTimeStep());
+		printf("Rank: %d, Time: %07i :: finished HandleActors\n", communicationNet.Rank(), (int)simulationState->GetTimeStep());
 	}
 
 

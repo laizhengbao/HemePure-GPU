@@ -89,7 +89,8 @@ namespace hemelb
         net::MpiFile outputFile;
 
         // Added July 2020
-        std::vector<MPI_Request> requests_Write;
+        MPI_Request lastRequest;
+        int last_n_asynch_write;
         MPI_Status status;
         //
 

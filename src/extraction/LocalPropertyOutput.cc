@@ -50,7 +50,8 @@ namespace hemelb
     LocalPropertyOutput::LocalPropertyOutput(IterableDataSource& dataSource,
                                              const PropertyOutputFile* outputSpec,
                                              const net::IOCommunicator& ioComms) :
-      comms(ioComms), dataSource(dataSource), outputSpec(outputSpec)
+      comms(ioComms), dataSource(dataSource), outputSpec(outputSpec), 
+      lastRequest(MPI_REQUEST_NULL), last_n_asynch_write(0)
     {
       // Open the file as write-only, create it if it doesn't exist, don't create if the file
       // already exists.
@@ -217,44 +218,138 @@ namespace hemelb
     {
       return outputSpec;
     }
-void LocalPropertyOutput::Write(unsigned long timestepNumber, unsigned long initial_timestepNumber, unsigned long max_timestepNumber)
-{
-  // IZ - Consider the checkpointing case (restarting simulation from t_restart = initial_timestepNumber)
-  int n_asynch_write = (timestepNumber - initial_timestepNumber +1) / outputSpec->frequency; 
+    void LocalPropertyOutput::Write(unsigned long timestepNumber, unsigned long initial_timestepNumber, unsigned long max_timestepNumber)
+    {
+      // a. ALWAYS ensure the previous asynchronous write is complete before potentially starting a new one
+      // or even if we just return early. This prevents background IO from dangling for thousands of steps.
+      if (lastRequest != MPI_REQUEST_NULL)
+      {
+        MPI_Wait(&lastRequest, &status);
+        lastRequest = MPI_REQUEST_NULL;
+      }
 
-  // Don't write if we shouldn't this iteration.
-  if (!ShouldWrite(timestepNumber-initial_timestepNumber+1))
-  {
-    return;
-  }
+      // Don't write if we shouldn't this iteration.
+      if (!ShouldWrite(timestepNumber-initial_timestepNumber+1))
+      {
+        return;
+      }
 
-  // Don't write if this core doesn't do anything.
-  if (writeLength <= 0)
-  {
-    return;
-  }
+      // Don't write if this core doesn't do anything.
+      if (writeLength <= 0)
+      {
+        return;
+      }
 
-  // Determine first the # of the current write
-  // Max number of writing times (divide max simulation time with the frequency time):
-  int max_write_n = (max_timestepNumber) / outputSpec->frequency; 
+      // Determine the current write sequence number
+      int n_asynch_write = (timestepNumber - initial_timestepNumber +1) / outputSpec->frequency; 
 
-  // IZ - debugging
-  printf("Rank: %d, Time: %lu, max_timestepNumber = %ld, outputSpec->frequency = %ld, initial_timestepNumber = %ld, Max_number of writing times = %d \n", 
-         comms.Rank(), timestepNumber, max_timestepNumber, outputSpec->frequency, initial_timestepNumber, max_write_n );
+      // Create the buffer.
+      io::writers::xdr::XdrMemWriter xdrWriter(&buffer[0], buffer.size());
 
-  requests_Write.resize(max_write_n, MPI_Request());
+      // Firstly, the IO proc must write the iteration number.
+      if (comms.OnIORank())
+      {
+        xdrWriter << (uint64_t) timestepNumber;
+      }
 
-  // a. Call MPI_Wait to ensure that the MPI write from the previous timestep is complete
-  // BEFORE we start filling the buffer again.
-  if (n_asynch_write > 1)
-  {
-    printf("Rank: %d, Time: %lu, Waiting for previous non-blocking write (Number %d) to complete...\n", comms.Rank(), timestepNumber, n_asynch_write - 1);
-    MPI_Wait(&requests_Write[n_asynch_write-2], &status);
-    printf("Rank: %d, Time: %lu, Previous write completed.\n", comms.Rank(), timestepNumber);
-  }
+      dataSource.Reset();
 
-  // Create the buffer.
-  io::writers::xdr::XdrMemWriter xdrWriter(&buffer[0], buffer.size());
+      while (dataSource.ReadNext())
+      {
+        const util::Vector3D<site_t>& position = dataSource.GetPosition();
+        if (outputSpec->geometry->Include(dataSource, position))
+        {
+          // Write the position
+          xdrWriter << (uint32_t) position.x << (uint32_t) position.y << (uint32_t) position.z;
+
+          // Write for each field.
+          for (unsigned outputNumber = 0; outputNumber < outputSpec->fields.size(); ++outputNumber)
+          {
+            switch (outputSpec->fields[outputNumber].type)
+            {
+              case OutputField::Pressure:
+                xdrWriter << static_cast<WrittenDataType> (dataSource.GetPressure()
+                    - REFERENCE_PRESSURE_mmHg);
+                break;
+              case OutputField::Velocity:
+                xdrWriter << static_cast<WrittenDataType> (dataSource.GetVelocity().x)
+                    << static_cast<WrittenDataType> (dataSource.GetVelocity().y)
+                    << static_cast<WrittenDataType> (dataSource.GetVelocity().z);
+                break;
+                //! @TODO: Work out how to handle the different stresses.
+              case OutputField::VonMisesStress:
+                xdrWriter << static_cast<WrittenDataType> (dataSource.GetVonMisesStress());
+                break;
+              case OutputField::ShearStress:
+                xdrWriter << static_cast<WrittenDataType> (dataSource.GetShearStress());
+                break;
+              case OutputField::ShearRate:
+                xdrWriter << static_cast<WrittenDataType> (dataSource.GetShearRate());
+                break;
+              case OutputField::StressTensor:
+              {
+                util::Matrix3D tensor = dataSource.GetStressTensor();
+                // Only the upper triangular part of the symmetric tensor is stored. Storage is row-wise.
+                xdrWriter << static_cast<WrittenDataType> (tensor[0][0])
+                    << static_cast<WrittenDataType> (tensor[0][1])
+                    << static_cast<WrittenDataType> (tensor[0][2])
+                    << static_cast<WrittenDataType> (tensor[1][1])
+                    << static_cast<WrittenDataType> (tensor[1][2])
+                    << static_cast<WrittenDataType> (tensor[2][2]);
+                break;
+              }
+              case OutputField::Traction:
+                xdrWriter << static_cast<WrittenDataType> (dataSource.GetTraction().x)
+                    << static_cast<WrittenDataType> (dataSource.GetTraction().y)
+                    << static_cast<WrittenDataType> (dataSource.GetTraction().z);
+                break;
+              case OutputField::TangentialProjectionTraction:
+                xdrWriter
+                    << static_cast<WrittenDataType> (dataSource.GetTangentialProjectionTraction().x)
+                    << static_cast<WrittenDataType> (dataSource.GetTangentialProjectionTraction().y)
+                    << static_cast<WrittenDataType> (dataSource.GetTangentialProjectionTraction().z);
+                break;
+
+              case OutputField::Distributions:
+                unsigned numComponents;
+                const distribn_t *d_ptr;
+                numComponents = dataSource.GetNumVectors();
+                d_ptr = dataSource.GetDistribution();
+                for (int i = 0; i < numComponents; i++)
+                {
+                  xdrWriter << static_cast<WrittenDataType> (*d_ptr);
+                  d_ptr++;
+                }
+                break;
+
+              case OutputField::MpiRank:
+                xdrWriter
+                    << static_cast<WrittenDataType> (comms.Rank());
+                break;
+              default:
+                // This should never trip. It only occurs when a new OutputField field is added and no
+                // implementation is provided for its serialisation.
+                assert(false);
+            }
+          }
+        }
+      }
+
+      // b. Call non-blocking MPI write
+      outputFile.WriteAt_nonBlocking(localDataOffsetIntoFile, buffer, &lastRequest);
+      last_n_asynch_write = n_asynch_write;
+
+      // c. If this is the last write then wait for it to complete.
+      int max_write_n = (max_timestepNumber) / outputSpec->frequency; 
+      if (n_asynch_write == max_write_n)
+      {
+        MPI_Wait(&lastRequest, &status);
+        lastRequest = MPI_REQUEST_NULL;
+      }
+
+      // Set the offset to the right place for writing on the next iteration.
+      localDataOffsetIntoFile += allCoresWriteLength;
+    }
 
       // Firstly, the IO proc must write the iteration number.
       if (comms.OnIORank())
