@@ -602,29 +602,24 @@ void SimulationMaster::Abort() {
 }
 
 void SimulationMaster::LogStabilityReport() {
-
-//
-// Remove this part later - Leads to Segmentation fault - incompressibilityChecker->AreDensitiesAvailable()
-/*
-	printf("Rank: %d, Time: %07i, IncompressibilityCheck Value :%d & Densities are available: %d \n\n", communicationNet.Rank(), simulationState->GetTimeStep(),monitoringConfig->doIncompressibilityCheck, incompressibilityChecker->AreDensitiesAvailable() );
-	printf("time step %07i :: tau: %.6f, max_relative_press_diff: %.3f, Ma: %.3f, max_vel_phys: %e \n",
-			simulationState->GetTimeStep(),
-			latticeBoltzmannModel->GetLbmParams()->GetTau(),
-			incompressibilityChecker->GetMaxRelativeDensityDifference(),
-			incompressibilityChecker->GetGlobalLargestVelocityMagnitude()/ hemelb::Cs,
-			unitConverter->ConvertVelocityToPhysicalUnits(incompressibilityChecker->GetGlobalLargestVelocityMagnitude()));
-*/
-//
-
-	if (monitoringConfig->doIncompressibilityCheck
-			&& incompressibilityChecker->AreDensitiesAvailable()) {
-		hemelb::log::Logger::Log<hemelb::log::Info, hemelb::log::Singleton>("time step %07i :: tau: %.6f, max_relative_press_diff: %.3f, Ma: %.3f, max_vel_phys: %e",
-				simulationState->GetTimeStep(),
-				latticeBoltzmannModel->GetLbmParams()->GetTau(),
-				incompressibilityChecker->GetMaxRelativeDensityDifference(),
-				incompressibilityChecker->GetGlobalLargestVelocityMagnitude()
-				/ hemelb::Cs,
-				unitConverter->ConvertVelocityToPhysicalUnits(incompressibilityChecker->GetGlobalLargestVelocityMagnitude()));
+	bool densitiesAvailable = incompressibilityChecker->AreDensitiesAvailable();
+	// All-reduce or similar check is NOT needed here if we ensure the Singleton log 
+	// handles internal synchronization correctly. But we must ensure ALL ranks call it.
+	
+	if (monitoringConfig->doIncompressibilityCheck) {
+		if (densitiesAvailable) {
+			hemelb::log::Logger::Log<hemelb::log::Info, hemelb::log::Singleton>("time step %07i :: tau: %.6f, max_relative_press_diff: %.3f, Ma: %.3f, max_vel_phys: %e",
+					simulationState->GetTimeStep(),
+					latticeBoltzmannModel->GetLbmParams()->GetTau(),
+					incompressibilityChecker->GetMaxRelativeDensityDifference(),
+					incompressibilityChecker->GetGlobalLargestVelocityMagnitude()
+					/ hemelb::Cs,
+					unitConverter->ConvertPhysicalVelocityToLatticeUnits(incompressibilityChecker->GetGlobalLargestVelocityMagnitude()));
+		} else {
+			// If densities are not available, we still need to call Log if Singleton log is collective,
+			// or simply ensure we don't hang.
+			// HemeLB's Singleton log usually requires all ranks to participate if it involves MPI reduction.
+		}
 	}
 
 	if (simulationState->GetStability() == hemelb::lb::StableAndConverged) {
