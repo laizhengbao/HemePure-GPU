@@ -236,19 +236,20 @@ namespace hemelb
       // Max number of writing times (divide max simulation time with the frequency time):
       int max_write_n = (max_timestepNumber) / outputSpec->frequency;
       // IZ - debugging
-      //printf("max_timestepNumber = %ld, outputSpec->frequency = %ld, initial_timestepNumber = %ld, Max_number of writing times = %d \n\n", max_timestepNumber, outputSpec->frequency, initial_timestepNumber, max_write_n );
+      printf("Rank: %d, Time: %lu, max_timestepNumber = %ld, outputSpec->frequency = %ld, initial_timestepNumber = %ld, Max_number of writing times = %d \n", 
+             comms.Rank(), timestepNumber, max_timestepNumber, outputSpec->frequency, initial_timestepNumber, max_write_n );
 
       requests_Write.resize(max_write_n, MPI_Request());
       // IZ - Consider the checkpointing case (restarting simulation from t_restart = initial_timestepNumber)
-      // int n_asynch_write = timestepNumber / outputSpec->frequency; // Determine the number of the file (time-sequence) being written
-      int n_asynch_write = (timestepNumber - initial_timestepNumber +1) / outputSpec->frequency; // Determine the number of the file (time-sequence) being written
-      //printf("Rank: %d, Writing time = %lu and Number = %d \n",  comms.Rank(), timestepNumber, n_asynch_write);
+      int n_asynch_write = (timestepNumber - initial_timestepNumber +1) / outputSpec->frequency; 
 
       // a. Call MPI_Wait to ensure that the MPI write from the previous timestep is complete
       // BEFORE we start filling the buffer again.
       if (n_asynch_write > 1)
       {
+        printf("Rank: %d, Time: %lu, Waiting for previous non-blocking write (Number %d) to complete...\n", comms.Rank(), timestepNumber, n_asynch_write - 1);
         MPI_Wait(&requests_Write[n_asynch_write-2], &status);
+        printf("Rank: %d, Time: %lu, Previous write completed.\n", comms.Rank(), timestepNumber);
       }
 
       // Create the buffer.

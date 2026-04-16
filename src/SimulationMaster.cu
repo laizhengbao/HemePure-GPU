@@ -524,12 +524,20 @@ void SimulationMaster::DoTimeStep() {
 		hemelb::log::Logger::Log<hemelb::log::Info, hemelb::log::Singleton>("time step %07i :: write_image_to_disk %i",
 				simulationState->GetTimeStep(),
 				writeImage);
+		hemelb::log::Logger::Log<hemelb::log::Info, hemelb::log::Singleton>("time step %07i :: entering LogStabilityReport", simulationState->GetTimeStep());
 		LogStabilityReport();
+		hemelb::log::Logger::Log<hemelb::log::Info, hemelb::log::Singleton>("time step %07i :: finished LogStabilityReport", simulationState->GetTimeStep());
 	}
 
 	RecalculatePropertyRequirements();
 
+	if ((simulationState->GetTimeStep() - simulationState->GetInitTimeStep() +1) % 200 == 0) {
+		hemelb::log::Logger::Log<hemelb::log::Info, hemelb::log::Singleton>("time step %07i :: entering HandleActors", simulationState->GetTimeStep());
+	}
 	HandleActors();
+	if ((simulationState->GetTimeStep() - simulationState->GetInitTimeStep() +1) % 200 == 0) {
+		hemelb::log::Logger::Log<hemelb::log::Info, hemelb::log::Singleton>("time step %07i :: finished HandleActors", simulationState->GetTimeStep());
+	}
 
 
 	// Check the stability of the code
