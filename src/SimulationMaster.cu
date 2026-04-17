@@ -603,8 +603,6 @@ void SimulationMaster::Abort() {
 
 void SimulationMaster::LogStabilityReport() {
 	bool densitiesAvailable = incompressibilityChecker->AreDensitiesAvailable();
-	// All-reduce or similar check is NOT needed here if we ensure the Singleton log 
-	// handles internal synchronization correctly. But we must ensure ALL ranks call it.
 	
 	if (monitoringConfig->doIncompressibilityCheck) {
 		if (densitiesAvailable) {
@@ -614,11 +612,11 @@ void SimulationMaster::LogStabilityReport() {
 					incompressibilityChecker->GetMaxRelativeDensityDifference(),
 					incompressibilityChecker->GetGlobalLargestVelocityMagnitude()
 					/ hemelb::Cs,
-					unitConverter->ConvertPhysicalVelocityToLatticeUnits(incompressibilityChecker->GetGlobalLargestVelocityMagnitude()));
+					unitConverter->ConvertVelocityToPhysicalUnits(incompressibilityChecker->GetGlobalLargestVelocityMagnitude()));
 		} else {
-			// If densities are not available, we still need to call Log if Singleton log is collective,
-			// or simply ensure we don't hang.
-			// HemeLB's Singleton log usually requires all ranks to participate if it involves MPI reduction.
+			// If densities are not available, we skip the collective log to avoid potential mismatches,
+			// but in Singleton mode, we must be careful if the implementation expects ALL ranks.
+			// HemeLB's Singleton log usually handles this, but let's be safe.
 		}
 	}
 
