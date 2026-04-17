@@ -602,10 +602,14 @@ void SimulationMaster::Abort() {
 }
 
 void SimulationMaster::LogStabilityReport() {
-	bool densitiesAvailable = incompressibilityChecker->AreDensitiesAvailable();
+	bool localDensitiesAvailable = incompressibilityChecker->AreDensitiesAvailable();
+	// Synchronize the flag across all ranks to ensure everyone makes the same decision
+	// about calling the collective Logger::Log.
+	// Use communicationNet to perform an Allreduce on the boolean flag
+	bool globalDensitiesAvailable = communicationNet.AllReduce(localDensitiesAvailable, MPI_LAND);
 	
 	if (monitoringConfig->doIncompressibilityCheck) {
-		if (densitiesAvailable) {
+		if (globalDensitiesAvailable) {
 			hemelb::log::Logger::Log<hemelb::log::Info, hemelb::log::Singleton>("time step %07i :: tau: %.6f, max_relative_press_diff: %.3f, Ma: %.3f, max_vel_phys: %e",
 					simulationState->GetTimeStep(),
 					latticeBoltzmannModel->GetLbmParams()->GetTau(),
@@ -613,10 +617,6 @@ void SimulationMaster::LogStabilityReport() {
 					incompressibilityChecker->GetGlobalLargestVelocityMagnitude()
 					/ hemelb::Cs,
 					unitConverter->ConvertVelocityToPhysicalUnits(incompressibilityChecker->GetGlobalLargestVelocityMagnitude()));
-		} else {
-			// If densities are not available, we skip the collective log to avoid potential mismatches,
-			// but in Singleton mode, we must be careful if the implementation expects ALL ranks.
-			// HemeLB's Singleton log usually handles this, but let's be safe.
 		}
 	}
 
