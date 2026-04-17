@@ -603,10 +603,9 @@ void SimulationMaster::Abort() {
 
 void SimulationMaster::LogStabilityReport() {
 	bool localDensitiesAvailable = incompressibilityChecker->AreDensitiesAvailable();
-	// Synchronize the flag across all ranks to ensure everyone makes the same decision
-	// about calling the collective Logger::Log.
-	// Use communicationNet to perform an Allreduce on the boolean flag
-	bool globalDensitiesAvailable = communicationNet.AllReduce(localDensitiesAvailable, MPI_LAND);
+	// Synchronize the flag across all ranks using the IOCommunicator (ioComms)
+	bool globalDensitiesAvailable;
+	ioComms.AllReduce(localDensitiesAvailable, globalDensitiesAvailable, MPI_LAND);
 	
 	if (monitoringConfig->doIncompressibilityCheck) {
 		if (globalDensitiesAvailable) {
